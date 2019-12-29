@@ -8,12 +8,25 @@ module FFMPEG
     attr_reader :path, :duration, :time, :bitrate, :rotation, :creation_time
     attr_reader :video_stream, :video_codec, :video_bitrate, :colorspace, :width, :height, :sar, :dar, :frame_rate
     attr_reader :audio_streams, :audio_stream, :audio_codec, :audio_bitrate, :audio_sample_rate, :audio_channels, :audio_tags
+    attr_reader :input_options
     attr_reader :container
     attr_reader :metadata, :format_tags
 
     UNSUPPORTED_CODEC_PATTERN = /^Unsupported codec with id (\d+) for input stream (\d+)$/
 
-    def initialize(path)
+    def self.convert_input_options(input_options)
+      iopts = []
+
+      if input_options.is_a?(Array)
+        iopts += input_options
+      else
+        input_options.each { |k, v| iopts += ['-' + k.to_s, v] }
+      end
+
+      iopts
+    end
+
+    def initialize(path, input_options = {})
       @path = path
 
       if remote?
@@ -24,11 +37,10 @@ module FFMPEG
       else
         raise Errno::ENOENT, "the file '#{path}' does not exist" unless File.exist?(path)
       end
-
-      @path = path
+      @input_options = Movie.convert_input_options(input_options)
 
       # ffmpeg will output to stderr
-      command = [FFMPEG.ffprobe_binary, '-i', path, *%w(-print_format json -show_format -show_streams -show_error)]
+      command = [FFMPEG.ffprobe_binary, *@input_options, '-i', path, *%w(-print_format json -show_format -show_streams -show_error)]
       std_output = ''
       std_error = ''
 

@@ -11,9 +11,13 @@ module FFMPEG
     end
 
     def initialize(input, output_file, options = EncodingOptions.new, transcoder_options = {})
-      if input.is_a?(FFMPEG::Movie)
+      raise TypeError unless input.nil? || input.is_a?(FFMPEG::Movie)
+
+      @iopts = []
+      if input
         @movie = input
         @input = input.path
+        @iopts += input.input_options
       end
       @output_file = output_file
 
@@ -26,15 +30,9 @@ module FFMPEG
       @input = @transcoder_options[:input] unless @transcoder_options[:input].nil?
 
       input_options = @transcoder_options[:input_options] || []
-      iopts = []
+      @iopts += Movie.convert_input_options(input_options)
 
-      if input_options.is_a?(Array)
-        iopts += input_options
-      else
-        input_options.each { |k, v| iopts += ['-' + k.to_s, v] }
-      end
-
-      @command = [FFMPEG.ffmpeg_binary, '-y', *iopts, '-i', @input, *@raw_options.to_a, @output_file]
+      @command = [FFMPEG.ffmpeg_binary, '-y', *@iopts, '-i', @input, *@raw_options.to_a, @output_file]
     end
 
     def run(&block)
@@ -52,7 +50,7 @@ module FFMPEG
     end
 
     def encoded
-      @encoded ||= Movie.new(@output_file) if File.exist?(@output_file)
+      @encoded ||= Movie.new(@output_file, @iopts) if File.exist?(@output_file)
     end
 
     def timeout

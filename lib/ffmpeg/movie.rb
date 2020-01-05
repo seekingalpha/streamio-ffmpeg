@@ -1,11 +1,10 @@
 require 'time'
 require 'multi_json'
 require 'uri'
-require 'net/http'
 
 module FFMPEG
   class Movie
-    attr_reader :path, :duration, :time, :bitrate, :rotation, :creation_time
+    attr_reader :path, :duration, :time, :bitrate, :size, :rotation, :creation_time
     attr_reader :video_stream, :video_codec, :video_bitrate, :colorspace, :width, :height, :sar, :dar, :frame_rate
     attr_reader :audio_streams, :audio_stream, :audio_codec, :audio_bitrate, :audio_sample_rate, :audio_channels, :audio_tags
     attr_reader :input_options
@@ -29,14 +28,6 @@ module FFMPEG
     def initialize(path, input_options = {})
       @path = path
 
-      if remote?
-        @head = head
-        unless @head.is_a?(Net::HTTPSuccess)
-          raise Errno::ENOENT, "the URL '#{path}' does not exist or is not available (response code: #{@head.code})"
-        end
-      else
-        raise Errno::ENOENT, "the file '#{path}' does not exist" unless File.exist?(path)
-      end
       @input_options = Movie.convert_input_options(input_options)
 
       # ffmpeg will output to stderr
@@ -85,6 +76,8 @@ module FFMPEG
                          end
 
         @bitrate = @metadata[:format][:bit_rate].to_i
+
+        @size = @metadata[:format][:size].to_i
 
         # TODO: Handle multiple video codecs (is that possible?)
         video_stream = video_streams.first
@@ -160,7 +153,7 @@ module FFMPEG
     end
 
     def remote?
-      @path =~ URI::regexp(%w(http https))
+      @path =~ URI.regexp && @path !~ URI.regexp(%w[file])
     end
 
     def local?
@@ -187,14 +180,6 @@ module FFMPEG
 
     def calculated_pixel_aspect_ratio
       aspect_from_sar || 1
-    end
-
-    def size
-      if local?
-        File.size(@path)
-      else
-        @head.content_length
-      end
     end
 
     def audio_channel_layout
@@ -244,27 +229,6 @@ module FFMPEG
       output[/test/] # Running a regexp on the string throws error if it's not UTF-8
     rescue ArgumentError
       output.force_encoding("ISO-8859-1")
-    end
-
-    def head(location=@path, limit=FFMPEG.max_http_redirect_attempts)
-      url = URI(location)
-      return unless url.path
-
-      http = Net::HTTP.new(url.host, url.port)
-      http.use_ssl = url.port == 443
-      response = http.request_head(url.request_uri)
-
-      case response
-        when Net::HTTPRedirection then
-          raise FFMPEG::HTTPTooManyRequests if limit == 0
-          new_uri = url + URI(response['Location'])
-
-          head(new_uri, limit - 1)
-        else
-          response
-      end
-    rescue SocketError, Errno::ECONNREFUSED => e
-      nil
     end
   end
 end
